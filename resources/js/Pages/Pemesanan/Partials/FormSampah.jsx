@@ -28,6 +28,8 @@ const FormSampah = ({ onBack, onSuccess }) => {
         
         const data = new FormData();
         Object.keys(formData).forEach(key => data.append(key, formData[key] ?? ''));
+        // Untuk sampah, lokasi_tujuan sama dengan lokasi_jemput
+        data.append('lokasi_tujuan', formData.lokasi_jemput);
 
         try {
             const response = await axios.post('/api/pemesanan', data);

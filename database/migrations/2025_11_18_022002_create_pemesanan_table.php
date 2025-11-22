@@ -28,7 +28,7 @@ return new class extends Migration
             
             // Lokasi
             $table->string('lokasi_jemput');
-            $table->string('lokasi_tujuan'); // Pastikan hanya satu definisi
+            $table->string('lokasi_tujuan')->nullable(); // Nullable untuk sampah/layanan tanpa tujuan
             
             // Keuangan & Status
             // ERROR sebelumnya terjadi karena baris ini ada dua kali. 
