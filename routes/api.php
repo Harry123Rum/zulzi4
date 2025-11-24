@@ -3,7 +3,8 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\PemesananController; // <-- Pastikan Controller ini di-import
+use App\Http\Controllers\PemesananController;
+use App\Http\Controllers\PembayaranController; // <-- TAMBAHAN PENTING: Import Controller Pembayaran
 use App\Http\Controllers\AboutController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\ReviewController;
@@ -44,6 +45,14 @@ Route::get('/armada-list', [PemesananController::class, 'getArmadaList']);
 
 // Route untuk menyimpan Pemesanan Baru
 Route::post('/pemesanan', [PemesananController::class, 'store']);
+
+// --- TAMBAHAN PENTING (MULAI) ---
+// Route untuk Refresh Status (Cek status pesanan berdasarkan ID)
+Route::get('/pemesanan/{id}', [PemesananController::class, 'show']);
+
+// Route untuk Upload Bukti Pembayaran
+Route::post('/pembayaran', [PembayaranController::class, 'store']);
+// --- TAMBAHAN PENTING (SELESAI) ---
 
 // Route Public Lainnya
 Route::get('/reviews/public', [ReviewController::class, 'getPublicReviews']); 

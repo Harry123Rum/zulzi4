@@ -7,33 +7,32 @@ use App\Models\Pemesanan;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB; // Untuk getArmadaList
 
 class PemesananController extends Controller
 {
+    /**
+     * 1. STORE: Menyimpan Pesanan Baru dari User
+     */
     public function store(Request $request)
     {
-        // 1. Tentukan Validasi Dasar
-        $rules = [
+        // Validasi Input
+        $validator = Validator::make($request->all(), [
             'layanan' => 'required|in:rental,barang,sampah',
             'tgl_mulai' => 'required|date',
             'lokasi_jemput' => 'required|string',
-            // FIX: id_armada WAJIB diisi (required) karena database menolak null
-            'id_armada' => 'required|integer', 
-            
-            // Validasi lainnya
+            // id_armada kita buat nullable agar admin yang menentukan nanti
             'lama_rental' => 'nullable|integer',
             'foto_barang' => 'nullable|file|image|max:10240',
             'foto_sampah' => 'nullable|file|image|max:10240',
-        ];
-
-        // Validasi khusus berdasarkan layanan
-        $validator = Validator::make($request->all(), $rules);
+        ]);
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // 2. Tentukan ID Layanan
+        // Tentukan ID Layanan
         $layananId = match($request->layanan) {
             'rental' => 1,
             'barang' => 2,
@@ -41,64 +40,96 @@ class PemesananController extends Controller
             default => 1,
         };
 
-        // 3. Logika Deskripsi (Gabung data sampah)
-        $deskripsi = $request->deskripsi_barang;
-        if ($request->layanan === 'sampah') {
+        // Logic Deskripsi (Gabungkan request user jadi satu string)
+        $deskripsi = "";
+        if ($request->layanan === 'rental') {
+            $mobil = $request->preferensi_armada ?? 'Tidak ada preferensi';
+            $deskripsi = "Layanan Rental Mobil. Request Unit: {$mobil}.";
+        } 
+        elseif ($request->layanan === 'barang') {
+            $barang = $request->deskripsi_barang ?? '-';
+            $truk = $request->preferensi_armada ?? 'Standar';
+            $deskripsi = "Angkut Barang: {$barang}. Request Truk: {$truk}.";
+        } 
+        elseif ($request->layanan === 'sampah') {
             $jenis = $request->jenis_sampah ?? '-';
             $volume = $request->perkiraan_volume ?? '-';
-            $deskripsi = "Jenis Sampah: $jenis, Volume: $volume";
+            $truk = $request->preferensi_armada ?? 'Sesuai Volume';
+            $deskripsi = "Sampah: {$jenis}, Volume: {$volume}. Request Truk: {$truk}.";
         }
 
-        // 4. Siapkan Data
+        // Siapkan Data
         $data = [
-            'id_pengguna' => auth()->id() ?? 1,
+            'id_pengguna' => auth()->id() ?? 1, // Fallback ID 1 jika testing
             'id_layanan' => $layananId,
             'tgl_pesan' => Carbon::now(),
             'tgl_mulai' => $request->tgl_mulai,
+            'tgl_selesai' => $request->tgl_selesai ?? null,
+            
             'lokasi_jemput' => $request->lokasi_jemput,
-            'lokasi_tujuan' => $request->lokasi_tujuan ?? $request->lokasi_jemput, // Default ke lokasi_jemput jika tidak ada
-            'status_pemesanan' => 'pending_approval',
-            'total_biaya' => 0,
+            'lokasi_tujuan' => $request->lokasi_tujuan ?? $request->lokasi_jemput,
             
-            // Wajib ada isinya sekarang
-            'id_armada' => $request->id_armada, 
+            'status_pemesanan' => 'Menunggu', // Status awal
+            'total_biaya' => 0, // Harga 0 menunggu admin
             
-            'tgl_selesai' => null,
+            // PENTING: Set NULL agar Admin yang isi nanti (Dispatcher)
+            'id_armada' => null, 
+            'id_supir' => null,
+            
             'deskripsi_barang' => $deskripsi,
             'est_berat_ton' => $request->est_berat_ton ?? null,
-            'jumlah_orang' => null,
+            'jumlah_orang' => $request->jumlah_orang ?? null,
             'lama_rental' => $request->lama_rental ?? null,
+            'foto_barang' => null
         ];
 
-        // 5. Handle Upload Foto
+        // Handle Upload Foto
         $file = $request->file('foto_barang') ?? $request->file('foto_sampah');
         if ($file) {
             $path = $file->store('public/uploads/pemesanan');
             $data['foto_barang'] = Storage::url($path);
-        } else {
-            $data['foto_barang'] = null;
         }
 
-        // 6. Simpan
+        // Simpan ke DB
         try {
             $pemesanan = Pemesanan::create($data);
             return response()->json([
-                'message' => 'Pesanan berhasil dibuat!',
+                'message' => 'Pesanan berhasil dibuat! Silakan tunggu konfirmasi Admin.',
                 'data' => $pemesanan
             ], 201);
         } catch (\Exception $e) {
-            \Log::error('Pemesanan Error:', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString(),
-                'data' => $data
-            ]);
+            Log::error('Order Error: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Gagal menyimpan pesanan',
-                'error' => $e->getMessage(),
-                'debug' => config('app.debug') ? $data : null
+                'message' => 'Terjadi kesalahan server saat menyimpan pesanan.',
+                'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * 2. SHOW: Melihat Detail Pesanan (Untuk Refresh Status)
+     */
+    public function show($id)
+    {
+        // Ambil data pesanan beserta detail Armada (jika sudah dipilih admin)
+        $pemesanan = Pemesanan::with(['layanan', 'armada'])->find($id);
+
+        if (!$pemesanan) {
+            return response()->json(['message' => 'Pesanan tidak ditemukan'], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $pemesanan
+        ]);
+    }
+
+    /**
+     * 3. GET ARMADA LIST: Untuk Dropdown (Opsional)
+     */
+    public function getArmadaList()
+    {
+        $armada = DB::table('armada')->where('status_ketersediaan', 'Tersedia')->get();
+        return response()->json($armada);
     }
 }
