@@ -1,9 +1,11 @@
 // resources/js/router.jsx
 import React from 'react';
 import { createBrowserRouter } from 'react-router-dom';
+import OAuthCallback from './Pages/Auth/OAuthCallback';
 
 // Import Halaman
 import PemesananPage from './Pages/Pemesanan/Index';
+import ResetPasswordPage from './Pages/Auth/ResetPasswordPage';
 
 // Disini kita daftarkan URL-nya
 const router = createBrowserRouter([
@@ -15,7 +17,23 @@ const router = createBrowserRouter([
         path: "/pemesanan",
         element: <PemesananPage />, // Ini halaman yang baru kita buat
     },
+    {
+        path: '/auth/google/callback',
+        element: <OAuthCallback />
+    },
     // Nanti tambah path lain disini (misal /login, /admin)
+    {
+        path: "/login",
+        element: <LoginPage />,
+    },
+    {
+        path: "/forgot-password", // Rute untuk halaman meminta reset link
+        element: <ForgotPasswordPage />,
+    },
+    {
+        path: "/reset-password", 
+        element: <ResetPasswordPage />,
+    },
 ]);
 
 export default router;

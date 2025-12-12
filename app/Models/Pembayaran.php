@@ -11,11 +11,9 @@ class Pembayaran extends Model
 
     protected $table = 'pembayaran';
     protected $primaryKey = 'id_pembayaran';
-    
-    // Matikan timestamps otomatis karena tabel tidak punya created_at/updated_at
-    public $timestamps = false; 
+    public $incrementing = true;
+    public $timestamps = false; // Karena tidak ada created_at dan updated_at
 
-    // Daftar kolom yang boleh diisi oleh Controller (Mass Assignment)
     protected $fillable = [
         'id_pemesanan',
         'id_admin',
@@ -26,16 +24,13 @@ class Pembayaran extends Model
         'bukti_transfer',
     ];
 
-    // Konversi tipe data otomatis saat diambil dari DB
     protected $casts = [
         'jumlah_bayar' => 'decimal:2',
         'tgl_bayar' => 'date',
     ];
 
-    // --- RELASI ---
-
     /**
-     * Relasi ke tabel Pemesanan
+     * Relasi ke Pemesanan
      */
     public function pemesanan()
     {
@@ -43,39 +38,101 @@ class Pembayaran extends Model
     }
 
     /**
-     * Relasi ke tabel User (sebagai Admin)
+     * Relasi ke Admin (User)
      */
     public function admin()
     {
         return $this->belongsTo(User::class, 'id_admin', 'id_pengguna');
     }
 
-    // --- ACCESSOR (Helper untuk Frontend) ---
-
     /**
-     * Mendapatkan URL lengkap untuk gambar bukti transfer
-     * Cara pakai di frontend/controller: $pembayaran->bukti_transfer_url
+     * Scope untuk pembayaran DP
      */
-    public function getBuktiTransferUrlAttribute()
+    public function scopeDP($query)
     {
-        return $this->bukti_transfer ? asset($this->bukti_transfer) : null;
+        return $query->where('jenis_pembayaran', 'DP');
     }
 
     /**
-     * Mendapatkan status verifikasi (Otomatis cek id_admin)
-     * Cara pakai: $pembayaran->status_verifikasi
+     * Scope untuk pembayaran Lunas
+     */
+    public function scopeLunas($query)
+    {
+        return $query->where('jenis_pembayaran', 'Lunas');
+    }
+
+    /**
+     * Scope untuk pembayaran menunggu verifikasi
+     */
+    public function scopeMenungguVerifikasi($query)
+    {
+        return $query->whereNull('id_admin');
+    }
+
+    /**
+     * Scope untuk pembayaran terverifikasi
+     */
+    public function scopeTerverifikasi($query)
+    {
+        return $query->whereNotNull('id_admin');
+    }
+
+    /**
+     * Scope berdasarkan metode bayar
+     */
+    public function scopeByMetode($query, $metode)
+    {
+        return $query->where('metode_bayar', $metode);
+    }
+
+    /**
+     * Accessor untuk format rupiah
+     */
+    public function getJumlahBayarFormatAttribute()
+    {
+        return 'Rp ' . number_format($this->jumlah_bayar, 0, ',', '.');
+    }
+
+    /**
+     * Accessor untuk URL bukti transfer
+     */
+    public function getBuktiTransferUrlAttribute()
+    {
+        if ($this->bukti_transfer) {
+            return asset('storage/' . $this->bukti_transfer);
+        }
+        return null;
+    }
+
+    /**
+     * Accessor untuk status verifikasi
      */
     public function getStatusVerifikasiAttribute()
     {
         return $this->id_admin ? 'Terverifikasi' : 'Menunggu';
     }
-    
+
     /**
-     * Helper format rupiah
-     * Cara pakai: $pembayaran->jumlah_bayar_format
+     * Check apakah pembayaran sudah terverifikasi
      */
-    public function getJumlahBayarFormatAttribute()
+    public function isVerified()
     {
-        return 'Rp ' . number_format($this->jumlah_bayar, 0, ',', '.');
+        return !is_null($this->id_admin);
+    }
+
+    /**
+     * Check apakah pembayaran adalah DP
+     */
+    public function isDP()
+    {
+        return $this->jenis_pembayaran === 'DP';
+    }
+
+    /**
+     * Check apakah pembayaran adalah Lunas
+     */
+    public function isLunas()
+    {
+        return $this->jenis_pembayaran === 'Lunas';
     }
 }
